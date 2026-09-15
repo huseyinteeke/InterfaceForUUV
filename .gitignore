@@ -1,0 +1,24 @@
+# CMake ve Derleme (Build) Çıktıları
+build/
+out/
+bin/
+CMakeCache.txt
+CMakeFiles/
+Makefile
+*.cmake
+
+# Derlenmiş İkililer (Binaries)
+*.exe
+*.dll
+*.o
+*.obj
+
+# Qt Tarafından Üretilen Geçici Dosyalar
+moc_*
+ui_*
+qrc_*
+Makefile*
+
+# IDE (VS Code) ve İşletim Sistemi
+.vscode/
+Thumbs.db
