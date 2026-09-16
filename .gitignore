@@ -22,3 +22,5 @@ Makefile*
 # IDE (VS Code) ve İşletim Sistemi
 .vscode/
 Thumbs.db
+
+venv
