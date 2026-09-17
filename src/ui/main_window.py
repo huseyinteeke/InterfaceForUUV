@@ -2,7 +2,7 @@ import os
 from PyQt5.QtCore import Qt, QUrl
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
                              QLabel, QDockWidget, QShortcut, QInputDialog, 
-                             QMessageBox, QComboBox, QPushButton, QLineEdit, QGroupBox, QGridLayout, QSlider)
+                             QMessageBox, QComboBox, QPushButton, QLineEdit, QGroupBox, QGridLayout, QSlider, QTabWidget)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtSerialPort import QSerialPortInfo
 from PyQt5.QtGui import QKeySequence, QPixmap
@@ -19,17 +19,17 @@ class MapWebPage(QWebEnginePage):
     def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
         if message.startswith("WP_CLICK:"):
             try:
-                coords = message.replace("WP_CLICK:", "").split(",")
-                lat = float(coords[0])
-                lon = float(coords[1])
+                coords = message.replace("WP_CLICK:", "").strip().split(",")
+                lat = float(coords[0].strip())
+                lon = float(coords[1].strip())
                 self.main_window.add_waypoint_from_map(lat, lon)
             except Exception as e:
                 print(f"Waypoint parse hatası: {e}")
         elif message.startswith("WP_REMOVE:"):
             try:
-                coords = message.replace("WP_REMOVE:", "").split(",")
-                lat = float(coords[0])
-                lon = float(coords[1])
+                coords = message.replace("WP_REMOVE:", "").strip().split(",")
+                lat = float(coords[0].strip())
+                lon = float(coords[1].strip())
                 self.main_window.remove_waypoint_from_map(lat, lon)
             except Exception as e:
                 print(f"Waypoint remove parse hatası: {e}")
@@ -49,6 +49,13 @@ class MainWindow(QMainWindow):
         self.video_worker = VideoWorker(camera_source=0, parent=self)
         self.video_worker.frame_ready.connect(self.update_video_frame)
         self.video_worker.start()
+
+    def closeEvent(self, event):
+        if hasattr(self, 'video_worker') and self.video_worker.isRunning():
+            self.video_worker.stop()
+        if hasattr(self, 'mavlink_worker') and self.mavlink_worker is not None and self.mavlink_worker.isRunning():
+            self.mavlink_worker.stop()
+        event.accept()
 
     def init_ui(self):
         central_widget = QWidget(self)
@@ -234,23 +241,35 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(right_layout, 1)
         self.setCentralWidget(central_widget)
 
-        # Geliştirici Konsolu
-        self.dev_console_dock = QDockWidget("Geliştirici Konsolu", self)
+        # Sistem Terminali
+        self.dev_console_dock = QDockWidget("Sistem Terminali", self)
         dev_widget = QWidget(self)
         dev_layout = QVBoxLayout(dev_widget)
+        
+        self.terminal_tabs = QTabWidget(self)
+        
+        # Tab 1: Sistem Logları
         self.console_output = QLabel("Konsol hazır.", self)
         self.console_output.setStyleSheet(
-            "background-color: #121212; "
-            "color: #00ff00; "
-            "font-family: 'Consolas', 'Courier New', monospace; "
-            "font-size: 13px; "
-            "padding: 8px; "
-            "border: 1px solid #333; "
-            "border-radius: 4px;"
+            "background-color: #121212; color: #00ff00; font-family: 'Consolas', 'Courier New', monospace; "
+            "font-size: 13px; padding: 8px; border: 1px solid #333; border-radius: 4px;"
         )
         self.console_output.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self.console_output.setWordWrap(True)
-        dev_layout.addWidget(self.console_output, 4)
+        
+        # Tab 2: Otopilot Mesajları (STATUSTEXT)
+        self.statustext_output = QLabel("Otopilot mesajları bekleniyor...", self)
+        self.statustext_output.setStyleSheet(
+            "background-color: #121212; color: #00bfff; font-family: 'Consolas', 'Courier New', monospace; "
+            "font-size: 13px; padding: 8px; border: 1px solid #333; border-radius: 4px;"
+        )
+        self.statustext_output.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.statustext_output.setWordWrap(True)
+        
+        self.terminal_tabs.addTab(self.console_output, "Sistem Logları")
+        self.terminal_tabs.addTab(self.statustext_output, "Otopilot Mesajları")
+        
+        dev_layout.addWidget(self.terminal_tabs, 4)
         
         cmd_layout = QHBoxLayout()
         self.cmd_input = QLineEdit()
@@ -259,15 +278,11 @@ class MainWindow(QMainWindow):
         dev_layout.addLayout(cmd_layout)
         
         self.dev_console_dock.setWidget(dev_widget)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.dev_console_dock)
-        self.dev_console_dock.hide()
-
-        self.dev_shortcut = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
-        self.dev_shortcut.activated.connect(self.toggle_dev_console)
+        self.addDockWidget(Qt.BottomDockWidgetArea, self.dev_console_dock)
 
     def refresh_ports(self):
         self.port_combo.clear()
-        self.port_combo.addItem("udpin:localhost:14550")
+        self.port_combo.addItem("udpin:0.0.0.0:14550")
         self.port_combo.addItem("tcp:localhost:14550")
         ports = QSerialPortInfo.availablePorts()
         for port in ports: self.port_combo.addItem(port.portName())
@@ -288,6 +303,10 @@ class MainWindow(QMainWindow):
             self.mavlink_worker.speed_received.connect(self.update_speed)
             self.mavlink_worker.connection_status.connect(self.handle_connection_status)
             self.mavlink_worker.log_msg.connect(self.append_log)
+            self.mavlink_worker.command_ack_received.connect(self.handle_command_ack)
+            self.mavlink_worker.param_value_received.connect(self.handle_param_value)
+            self.mavlink_worker.mission_ack_received.connect(self.handle_mission_ack)
+            self.mavlink_worker.statustext_received.connect(self.append_statustext_log)
             self.mavlink_worker.start()
         else:
             self.mavlink_worker.stop()
@@ -302,8 +321,13 @@ class MainWindow(QMainWindow):
         else:
             self.connect_btn.setText("Bağlan")
             self.connect_btn.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold;")
+            # Otomatik bağlantı kopması durumunda thread'i temizle
+            if self.mavlink_worker and self.mavlink_worker.isRunning():
+                self.mavlink_worker.stop()
+                self.mavlink_worker = None
 
     def send_arm_command(self, armed: bool):
+        self.last_arm_command = armed
         if self.mavlink_worker and self.mavlink_worker.isRunning():
             self.mavlink_worker.set_arm(armed)
 
@@ -329,6 +353,7 @@ class MainWindow(QMainWindow):
             }
             selected = self.mode_combo.currentText()
             mode_id = mode_map.get(selected, 0)
+            self.last_mode_requested = mode_id
             self.mavlink_worker.set_flight_mode(mode_id)
             self.append_log(f"Mod değişimi istendi: {selected}")
 
@@ -336,6 +361,7 @@ class MainWindow(QMainWindow):
         try:
             depth = float(self.depth_input.text())
             if self.mavlink_worker and self.mavlink_worker.isRunning():
+                self.last_param_requested = "TGT_DEPTH"
                 self.mavlink_worker.set_target_depth(depth)
         except ValueError: pass
 
@@ -344,6 +370,7 @@ class MainWindow(QMainWindow):
         try:
             val = float(self.density_val_input.text())
             if self.mavlink_worker and self.mavlink_worker.isRunning():
+                self.last_param_requested = "DENSITY"
                 self.mavlink_worker.set_parameter("DENSITY", val)
                 self.append_log(f"Yoğunluk ayarlandı: {val}")
         except ValueError:
@@ -356,20 +383,24 @@ class MainWindow(QMainWindow):
 
     def remove_waypoint_from_map(self, lat, lon):
         # Eşleşen waypointi listeden çıkar (yaklaşık koordinat eşleştirmesi)
+        removed = False
         for wp in self.waypoints:
-            if abs(wp["lat"] - lat) < 0.00001 and abs(wp["lon"] - lon) < 0.00001:
+            if abs(wp["lat"] - lat) < 0.0001 and abs(wp["lon"] - lon) < 0.0001:
                 self.waypoints.remove(wp)
                 self.append_log(f"Waypoint Silindi -> Kalan: {len(self.waypoints)}")
+                removed = True
                 break
+        
+        if not removed:
+            self.append_log(f"Hata: Silinmek istenen waypoint bulunamadı ({lat:.5f}, {lon:.5f})")
 
     def upload_mission_action(self):
-        if not self.waypoints:
-            self.append_log("Uyarı: Henüz haritadan waypoint seçilmedi!")
-            return
-
         if self.mavlink_worker and self.mavlink_worker.isRunning():
             self.mavlink_worker.upload_mission(self.waypoints)
-            self.append_log(f"{len(self.waypoints)} adet görev noktası için yükleme başlatıldı.")
+            if not self.waypoints:
+                self.append_log("Görev listesi temizlendi ve boş görev araca gönderiliyor.")
+            else:
+                self.append_log(f"{len(self.waypoints)} adet görev noktası için yükleme başlatıldı.")
         else:
             self.append_log("Bağlantı Hatası: Araç bağlı değil!")
 
@@ -387,7 +418,10 @@ class MainWindow(QMainWindow):
     def clear_waypoints(self):
         self.waypoints = []
         self.map_view.page().runJavaScript("if (typeof clearWaypoints === 'function') { clearWaypoints(); }")
-        self.append_log("Waypoint listesi temizlendi.")
+        self.append_log("Haritadaki görev noktaları silindi.")
+        
+        if self.mavlink_worker and self.mavlink_worker.isRunning():
+            self.mavlink_worker.upload_mission([])
 
     def append_log(self, message: str):
         current_text = self.console_output.text()
@@ -396,6 +430,32 @@ class MainWindow(QMainWindow):
             lines = lines[-20:]
         lines.append(f"> {message}")
         self.console_output.setText('\n'.join(lines))
+
+    def append_statustext_log(self, severity: int, text: str):
+        # Severity colors based on MAV_SEVERITY
+        color_map = {
+            0: "#ff0000", # EMERGENCY (Red)
+            1: "#ff3333", # ALERT
+            2: "#ff6600", # CRITICAL
+            3: "#ff9900", # ERROR
+            4: "#ffff00", # WARNING (Yellow)
+            5: "#00bfff", # NOTICE (Light blue)
+            6: "#00ff00", # INFO (Green)
+            7: "#888888"  # DEBUG (Gray)
+        }
+        color = color_map.get(severity, "#ffffff")
+        
+        # MAV_SEVERITY_INFO is 6
+        text_str = text.decode('utf-8', 'ignore') if isinstance(text, bytes) else str(text)
+        current_text = self.statustext_output.text()
+        lines = current_text.split('<br>')
+        if len(lines) > 20:
+            lines = lines[-20:]
+        
+        # We use simple HTML to colorize the line since it's a QLabel
+        lines.append(f"<span style='color: {color};'>> [Sev:{severity}] {text_str}</span>")
+        self.statustext_output.setText('<br>'.join(lines))
+
     def update_video_frame(self, image):
         self.video_label.setPixmap(QPixmap.fromImage(image).scaled(
             self.video_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
@@ -418,6 +478,57 @@ class MainWindow(QMainWindow):
     def update_speed(self, speed):
         self.telemetry_data["speed"] = speed
         self.refresh_telemetry_label()
+
+    def flash_button(self, btn, success, duration=2000):
+        color = "#2e7d32" if success else "#c62828"
+        original = btn.styleSheet()
+        btn.setStyleSheet(f"background-color: {color}; color: white; font-weight: bold;")
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(duration, lambda: btn.setStyleSheet(original))
+
+    def handle_command_ack(self, command, result, result_str):
+        success = (result == 0)
+        
+        if command == 400: # MAV_CMD_COMPONENT_ARM_DISARM
+            btn = self.arm_btn if getattr(self, 'last_arm_command', True) else self.disarm_btn
+            self.flash_button(btn, success)
+            if not success:
+                self.append_log(f"HATA: ARM/DISARM komutu başarısız oldu. Sonuç: {result_str}")
+            else:
+                self.append_log(f"BAŞARILI: ARM/DISARM işlemi onaylandı.")
+        
+        elif command == 176: # MAV_CMD_DO_SET_MODE
+            self.flash_button(self.set_mode_btn, success)
+            if not success:
+                self.append_log(f"HATA: Mod değiştirme başarısız oldu. Sonuç: {result_str}")
+            else:
+                self.append_log(f"BAŞARILI: Mod değiştirme işlemi onaylandı.")
+
+    def handle_param_value(self, param_id, param_val):
+        # Decode if necessary (it's string in Python 3 usually, or bytes)
+        param_str = param_id.decode('ascii').strip('\x00') if isinstance(param_id, bytes) else str(param_id)
+        last_param = getattr(self, 'last_param_requested', "")
+        
+        if param_str == last_param:
+            btn = self.set_depth_btn if param_str == "TGT_DEPTH" else self.set_density_btn
+            self.flash_button(btn, True)
+            self.append_log(f"BAŞARILI: Parametre ayarlandı. {param_str} = {param_val}")
+            self.last_param_requested = "" # Reset
+        else:
+            # Sadece okuma için gelmiş olabilir, loglamaya gerek yok
+            pass
+
+    def handle_mission_ack(self, result, result_str):
+        success = (result == 0) # MAV_MISSION_ACCEPTED
+        if not self.waypoints:
+            self.flash_button(self.clear_wp_btn, success)
+        else:
+            self.flash_button(self.upload_mission_btn, success)
+            
+        if not success:
+            self.append_log(f"HATA: Görev yükleme/temizleme başarısız oldu. Sonuç: {result_str}")
+        else:
+            self.append_log(f"BAŞARILI: Görev işlemi (Yükleme/Temizleme) onaylandı.")
 
     def send_dev_command(self):
         cmd = self.cmd_input.text().strip()
@@ -443,16 +554,6 @@ class MainWindow(QMainWindow):
             
         self.cmd_input.clear()
 
-    def toggle_dev_console(self):
-        password, ok = QInputDialog.getText(self, "Geliştirici Girişi", "Yetkili Şifresi:", QLineEdit.Password, "")
-        if ok and password == "sara2026":
-            if self.dev_console_dock.isHidden(): self.dev_console_dock.show()
-            else: self.dev_console_dock.hide()
-
-    def closeEvent(self, event):
-        self.video_worker.stop()
-        if self.mavlink_worker and self.mavlink_worker.isRunning(): self.mavlink_worker.stop()
-        event.accept()
 
     def update_vehicle_gps(self, lat, lon):
         js_code = f"updateVehiclePosition({lat}, {lon});"

@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8" />
-    <title>SARA GCS Map</title>
+    <title>DATUM Map</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
@@ -17,7 +17,7 @@
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
-            attribution: 'SARA GCS'
+            attribution: 'DATUM'
         }).addTo(map);
 
         var vehicleMarker = null;
@@ -30,12 +30,10 @@
             iconAnchor: [13, 13]
         });
 
-        // Python'dan çağrılarak aracın haritadaki konumunu güncelleyen fonksiyon
         function updateVehiclePosition(lat, lng) {
             if (!vehicleMarker) {
                 vehicleMarker = L.marker([lat, lng], {icon: vehicleIcon}).addTo(map)
                     .bindPopup("<b>DATUM / Araç</b>").openPopup();
-                // İlk bağlandığında haritayı araca odakla
                 map.setView([lat, lng], 17);
             } else {
                 vehicleMarker.setLatLng([lat, lng]);
@@ -44,7 +42,6 @@
 
         var wpMarkers = [];
 
-        // Haritaya tıklandığında waypoint ekleme
         map.on('click', function(e) {
             var lat = e.latlng.lat;
             var lng = e.latlng.lng;
