@@ -24,3 +24,4 @@ Makefile*
 Thumbs.db
 
 venv
+__pycache__/
