@@ -281,20 +281,6 @@ class MavlinkWorker(QThread):
         )
         self.log_msg.emit(f"Parametre gönderildi: {param_name} = {value}")
 
-    def set_target_depth(self, depth_meters: float):
-        """
-        Kullanıcının özel olarak ArduPilot'a eklediği bir parametre üzerinden
-        derinlik hedefi gönderir. 'TGT_DEPTH' kısmını kendi eklediğiniz
-        parametre ismi ile değiştirebilirsiniz.
-        Genel parametre gönderme metodunu (set_parameter) kullanarak ekstra
-        metot oluşumundan kaçınıyoruz.
-        """
-        if not self.master: return
-        
-        # Kullanıcının eklediği parametre ismi. Gerektiğinde buradan değiştirebilirsiniz.
-        param_adi = "TGT_DEPTH"
-        
-        self.set_parameter(param_adi, depth_meters)
 
     def upload_mission(self, waypoints):
         """

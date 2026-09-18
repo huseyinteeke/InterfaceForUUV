@@ -11,16 +11,20 @@ class VideoWorker(QThread):
         self._is_running = True
 
     def run(self):
-        cap = cv2.VideoCapture(self.camera_source)
+        cap = cv2.VideoCapture(self.camera_source, cv2.CAP_DSHOW) 
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
         while self._is_running:
             ret, frame = cap.read()
             if ret:
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 h, w, ch = rgb_frame.shape
                 bytes_per_line = ch * w
-                qt_image = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
+                
+                qt_image = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888).copy()
                 self.frame_ready.emit(qt_image)
-            self.msleep(30) # ~30 FPS sınırlaması
+                
+            
         cap.release()
 
     def stop(self):

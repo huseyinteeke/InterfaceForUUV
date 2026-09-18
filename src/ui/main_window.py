@@ -71,8 +71,6 @@ class MainWindow(QMainWindow):
         self.port_combo = QComboBox()
         self.port_combo.setEditable(True)  
         self.refresh_ports()
-        self.port_combo.addItem("udpin:localhost:14550")
-        self.refresh_ports()
         conn_layout.addWidget(QLabel("Port:"))
         conn_layout.addWidget(self.port_combo)
 
@@ -343,13 +341,14 @@ class MainWindow(QMainWindow):
     def reset_rc_override(self):
         self.throttle_slider.setValue(1500)
         self.rudder_slider.setValue(1500)
+        self.send_rc_override()
 
     def change_flight_mode(self):
         if self.mavlink_worker and self.mavlink_worker.isRunning():
             mode_map = {
-                "MANUAL (0)": 0, "ACRO (1)": 1, "STEERING (3)": 3, "HOLD (4)": 4, 
-                "LOITER (5)": 5, "FOLLOW (6)": 6, "SIMPLE (7)": 7, "AUTO (10)": 10, 
-                "RTL (11)": 11, "SMART_RTL (12)": 12, "GUIDED (15)": 15
+                "MANUAL": 0, "ACRO": 1, "STEERING": 3, "HOLD": 4, 
+                "LOITER": 5, "FOLLOW": 6, "SIMPLE": 7, "AUTO": 10, 
+                "RTL": 11, "SMART_RTL": 12, "GUIDED": 15
             }
             selected = self.mode_combo.currentText()
             mode_id = mode_map.get(selected, 0)
@@ -361,17 +360,19 @@ class MainWindow(QMainWindow):
         try:
             depth = float(self.depth_input.text())
             if self.mavlink_worker and self.mavlink_worker.isRunning():
-                self.last_param_requested = "TGT_DEPTH"
-                self.mavlink_worker.set_target_depth(depth)
-        except ValueError: pass
+                self.last_param_requested = "ATCTARG_DEP"
+                self.mavlink_worker.set_parameter("ATCTARG_DEP", depth)
+        except ValueError: 
+            self.append_log("Hata: Yoğunluk değeri geçerli değil.")
+
 
 
     def apply_density(self):
         try:
             val = float(self.density_val_input.text())
             if self.mavlink_worker and self.mavlink_worker.isRunning():
-                self.last_param_requested = "DENSITY"
-                self.mavlink_worker.set_parameter("DENSITY", val)
+                self.last_param_requested = "GND_SPEC_GRAV"
+                self.mavlink_worker.set_parameter("GND_SPEC_GRAV", val)
                 self.append_log(f"Yoğunluk ayarlandı: {val}")
         except ValueError:
             self.append_log("Hata: Yoğunluk değeri geçerli değil.")
@@ -382,7 +383,6 @@ class MainWindow(QMainWindow):
         self.append_log(f"Waypoint Eklendi -> Toplam: {len(self.waypoints)}")
 
     def remove_waypoint_from_map(self, lat, lon):
-        # Eşleşen waypointi listeden çıkar (yaklaşık koordinat eşleştirmesi)
         removed = False
         for wp in self.waypoints:
             if abs(wp["lat"] - lat) < 0.0001 and abs(wp["lon"] - lon) < 0.0001:
@@ -390,7 +390,6 @@ class MainWindow(QMainWindow):
                 self.append_log(f"Waypoint Silindi -> Kalan: {len(self.waypoints)}")
                 removed = True
                 break
-        
         if not removed:
             self.append_log(f"Hata: Silinmek istenen waypoint bulunamadı ({lat:.5f}, {lon:.5f})")
 
@@ -510,10 +509,10 @@ class MainWindow(QMainWindow):
         last_param = getattr(self, 'last_param_requested', "")
         
         if param_str == last_param:
-            btn = self.set_depth_btn if param_str == "TGT_DEPTH" else self.set_density_btn
+            btn = self.set_depth_btn if param_str == "ATCTARG_DEP" else self.set_density_btn
             self.flash_button(btn, True)
             self.append_log(f"BAŞARILI: Parametre ayarlandı. {param_str} = {param_val}")
-            self.last_param_requested = "" # Reset
+            self.last_param_requested = "" # Rese
         else:
             # Sadece okuma için gelmiş olabilir, loglamaya gerek yok
             pass

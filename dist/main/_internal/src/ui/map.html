@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>DATUM Map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        html, body, #map { height: 100%; margin: 0; padding: 0; background: #2d2d2d; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        var map = L.map('map').setView([41.1042, 29.0204], 16);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: 'DATUM'
+        }).addTo(map);
+
+        var vehicleMarker = null;
+        var waypoints = [];
+
+        var vehicleIcon = L.divIcon({
+            className: 'custom-vehicle-marker',
+            html: '<div style="background-color: #ff0000; width: 20px; height: 20px; border-radius: 10px; border: 3px solid white; box-shadow: 0 0 5px black;"></div>',
+            iconSize: [26, 26],
+            iconAnchor: [13, 13]
+        });
+
+        function updateVehiclePosition(lat, lng) {
+            if (!vehicleMarker) {
+                vehicleMarker = L.marker([lat, lng], {icon: vehicleIcon}).addTo(map)
+                    .bindPopup("<b>DATUM / Araç</b>").openPopup();
+                map.setView([lat, lng], 17);
+            } else {
+                vehicleMarker.setLatLng([lat, lng]);
+            }
+        }
+
+        var wpMarkers = [];
+
+        map.on('click', function(e) {
+            var lat = e.latlng.lat;
+            var lng = e.latlng.lng;
+            
+            var marker = L.marker([lat, lng]).addTo(map);
+            marker.bindPopup('WP: ' + lat.toFixed(5) + ', ' + lng.toFixed(5));
+            
+            marker.on('contextmenu', function(ev) {
+                map.removeLayer(marker);
+                wpMarkers = wpMarkers.filter(m => m !== marker);
+                console.log("WP_REMOVE:" + lat + "," + lng);
+            });
+            
+            wpMarkers.push(marker);
+            console.log("WP_CLICK:" + lat + "," + lng);
+        });
+
+        function clearWaypoints() {
+            wpMarkers.forEach(function(marker) {
+                map.removeLayer(marker);
+            });
+            wpMarkers = [];
+        }
+    </script>
+</body>
+</html>
