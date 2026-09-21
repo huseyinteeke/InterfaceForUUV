@@ -7,7 +7,7 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtSerialPort import QSerialPortInfo
 from PyQt5.QtGui import QKeySequence, QPixmap
 
-from src.workers.video_worker import VideoWorker
+from src.workers.video_worker import VideoWorker, HudData
 from src.workers.mavlink_worker import MavlinkWorker
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEnginePage
 
@@ -37,16 +37,112 @@ class MapWebPage(QWebEnginePage):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("DATUM")
-        self.resize(1400, 800)
+        self.setWindowTitle("DATUM — UUV Ground Control")
+        self.resize(1400, 820)
+
+        # ---- Global dark stylesheet ----
+        self.setStyleSheet("""
+            QMainWindow, QWidget {
+                background-color: #1a1a2e;
+                color: #e0e0e0;
+                font-family: 'Segoe UI', 'Arial', sans-serif;
+                font-size: 12px;
+            }
+            QGroupBox {
+                border: 1px solid #2d4a6e;
+                border-radius: 6px;
+                margin-top: 8px;
+                padding-top: 4px;
+                font-weight: bold;
+                font-size: 11px;
+                color: #7eb8f7;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 4px;
+            }
+            QPushButton {
+                border-radius: 4px;
+                padding: 4px 10px;
+                font-size: 11px;
+                font-weight: bold;
+                border: 1px solid #3a5a8a;
+                background-color: #1e3a5f;
+                color: #cce0ff;
+                min-height: 24px;
+            }
+            QPushButton:hover  { background-color: #2a4e7f; }
+            QPushButton:pressed { background-color: #0d2a4a; }
+            QComboBox, QLineEdit {
+                background-color: #162032;
+                border: 1px solid #2d4a6e;
+                border-radius: 4px;
+                padding: 2px 6px;
+                color: #d0e8ff;
+                min-height: 22px;
+                font-size: 11px;
+            }
+            QComboBox::drop-down { border: none; }
+            QLabel {
+                color: #c0d8f0;
+                font-size: 11px;
+            }
+            QSlider::groove:horizontal {
+                height: 4px;
+                background: #2d4a6e;
+                border-radius: 2px;
+            }
+            QSlider::handle:horizontal {
+                background: #4a90d9;
+                border: 1px solid #2d6aaa;
+                width: 14px;
+                height: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+            }
+            QTabWidget::pane {
+                border: 1px solid #2d4a6e;
+                border-radius: 4px;
+                background: #111827;
+            }
+            QTabBar::tab {
+                background: #162032;
+                color: #8ab4d8;
+                padding: 4px 12px;
+                border: 1px solid #2d4a6e;
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                font-size: 10px;
+            }
+            QTabBar::tab:selected {
+                background: #1e3a5f;
+                color: #e0f0ff;
+            }
+            QDockWidget {
+                color: #7eb8f7;
+                font-weight: bold;
+                font-size: 11px;
+                titlebar-close-icon: none;
+            }
+            QDockWidget::title {
+                background: #162032;
+                padding: 3px 8px;
+                border-bottom: 1px solid #2d4a6e;
+            }
+        """)
         
         self.mavlink_worker = None
         self.waypoints = []
         self.telemetry_data = {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "depth": 0.0, "gps": "Bekleniyor...", "speed": 0.0}
         
+        # HUD telemetry data container (shared with VideoWorker)
+        self.hud_data = HudData()
+        
         self.init_ui()
         
-        self.video_worker = VideoWorker(camera_source=0, parent=self)
+        self.video_worker = VideoWorker(camera_source=0, hud_data=self.hud_data, parent=self)
         self.video_worker.frame_ready.connect(self.update_video_frame)
         self.video_worker.start()
 
@@ -153,25 +249,29 @@ class MainWindow(QMainWindow):
         # Manuel Kontrol (Sliderlar)
 
         # Video Alanı
-        self.video_label = QLabel("EasyCap Video Bekleniyor...", self)
-        self.video_label.setStyleSheet("background-color: black; color: white;")
+        self.video_label = QLabel("Kamera bekleniyor...", self)
+        self.video_label.setStyleSheet(
+            "background-color: #0a0f1a;"
+            "color: #4a6fa5;"
+            "border: 1px solid #2d4a6e;"
+            "border-radius: 6px;"
+        )
         self.video_label.setAlignment(Qt.AlignCenter)
         self.video_label.setMinimumSize(640, 360)
         left_layout.addWidget(self.video_label, 3)
 
-        # Telemetri Alanı
-        self.telemetry_label = QLabel("Telemetri: Bağlantı Bekleniyor...", self)
+        # Telemetri Alanı — kompakt tek satır
+        self.telemetry_label = QLabel("Telemetri: Bağlantı bekleniyor...", self)
         self.telemetry_label.setStyleSheet(
-            "background-color: #2b2b2b; "
-            "color: #4caf50; "
-            "font-family: 'Consolas', 'Courier New', monospace; "
-            "font-size: 14px; "
-            "font-weight: bold; "
-            "padding: 10px; "
-            "border: 1px solid #4caf50; "
-            "border-radius: 5px;"
+            "background-color: #0f1d30;"
+            "color: #4fc3f7;"
+            "font-family: 'Consolas', 'Courier New', monospace;"
+            "font-size: 11px;"
+            "padding: 5px 10px;"
+            "border: 1px solid #1e4060;"
+            "border-radius: 4px;"
         )
-        left_layout.addWidget(self.telemetry_label, 1)
+        left_layout.addWidget(self.telemetry_label, 0)
 
         main_layout.addLayout(left_layout, 2)
 
@@ -239,44 +339,60 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(right_layout, 1)
         self.setCentralWidget(central_widget)
 
-        # Sistem Terminali
-        self.dev_console_dock = QDockWidget("Sistem Terminali", self)
+        # Sistem Terminali — kompakt dock
+        self.dev_console_dock = QDockWidget("  ⬛ Sistem Terminali", self)
+        self.dev_console_dock.setFeatures(
+            QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable
+        )
+
         dev_widget = QWidget(self)
         dev_layout = QVBoxLayout(dev_widget)
-        
+        dev_layout.setContentsMargins(4, 4, 4, 4)
+        dev_layout.setSpacing(3)
+
         self.terminal_tabs = QTabWidget(self)
-        
+        self.terminal_tabs.setMaximumHeight(130)
+
         # Tab 1: Sistem Logları
         self.console_output = QLabel("Konsol hazır.", self)
         self.console_output.setStyleSheet(
-            "background-color: #121212; color: #00ff00; font-family: 'Consolas', 'Courier New', monospace; "
-            "font-size: 13px; padding: 8px; border: 1px solid #333; border-radius: 4px;"
+            "background-color: #0b1520; color: #39d353;"
+            "font-family: 'Consolas', 'Courier New', monospace;"
+            "font-size: 10px; padding: 4px 6px;"
         )
         self.console_output.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self.console_output.setWordWrap(True)
-        
+
         # Tab 2: Otopilot Mesajları (STATUSTEXT)
         self.statustext_output = QLabel("Otopilot mesajları bekleniyor...", self)
         self.statustext_output.setStyleSheet(
-            "background-color: #121212; color: #00bfff; font-family: 'Consolas', 'Courier New', monospace; "
-            "font-size: 13px; padding: 8px; border: 1px solid #333; border-radius: 4px;"
+            "background-color: #0b1520; color: #58a6ff;"
+            "font-family: 'Consolas', 'Courier New', monospace;"
+            "font-size: 10px; padding: 4px 6px;"
         )
         self.statustext_output.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self.statustext_output.setWordWrap(True)
-        
-        self.terminal_tabs.addTab(self.console_output, "Sistem Logları")
-        self.terminal_tabs.addTab(self.statustext_output, "Otopilot Mesajları")
-        
-        dev_layout.addWidget(self.terminal_tabs, 4)
-        
+
+        self.terminal_tabs.addTab(self.console_output, "Loglar")
+        self.terminal_tabs.addTab(self.statustext_output, "Otopilot")
+
+        dev_layout.addWidget(self.terminal_tabs)
+
+        # Komut girişi
         cmd_layout = QHBoxLayout()
+        cmd_layout.setContentsMargins(0, 0, 0, 0)
         self.cmd_input = QLineEdit()
+        self.cmd_input.setPlaceholderText("Komut girin: arm | disarm | param <ad> <değer>")
+        self.cmd_input.setMaximumHeight(26)
         self.cmd_input.returnPressed.connect(self.send_dev_command)
         cmd_layout.addWidget(self.cmd_input)
         dev_layout.addLayout(cmd_layout)
-        
+
         self.dev_console_dock.setWidget(dev_widget)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.dev_console_dock)
+        # Başlangıçta küçük tut — kullanıcı genişletebilir
+        self.dev_console_dock.setMaximumHeight(180)
+
 
     def refresh_ports(self):
         self.port_combo.clear()
@@ -299,6 +415,8 @@ class MainWindow(QMainWindow):
             self.mavlink_worker.depth_received.connect(self.update_depth)
             self.mavlink_worker.gps_received.connect(self.update_vehicle_gps)
             self.mavlink_worker.speed_received.connect(self.update_speed)
+            self.mavlink_worker.battery_received.connect(self.update_battery)
+            self.mavlink_worker.gps_fix_received.connect(self.update_gps_fix)
             self.mavlink_worker.connection_status.connect(self.handle_connection_status)
             self.mavlink_worker.log_msg.connect(self.append_log)
             self.mavlink_worker.command_ack_received.connect(self.handle_command_ack)
@@ -456,9 +574,9 @@ class MainWindow(QMainWindow):
         self.statustext_output.setText('<br>'.join(lines))
 
     def update_video_frame(self, image):
-        self.video_label.setPixmap(QPixmap.fromImage(image).scaled(
-            self.video_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
-
+        pixmap = QPixmap.fromImage(image)
+        scaled_pixmap = pixmap.scaled(self.video_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.video_label.setPixmap(scaled_pixmap)
     def refresh_telemetry_label(self):
         t = self.telemetry_data
         self.telemetry_label.setText(
@@ -468,15 +586,23 @@ class MainWindow(QMainWindow):
 
     def update_attitude(self, roll, pitch, yaw):
         self.telemetry_data.update({"roll": roll, "pitch": pitch, "yaw": yaw})
+        self.hud_data.set_attitude(roll, pitch, yaw)
         self.refresh_telemetry_label()
 
     def update_depth(self, depth):
         self.telemetry_data["depth"] = depth
+        self.hud_data.set_depth(depth)
         self.refresh_telemetry_label()
 
     def update_speed(self, speed):
         self.telemetry_data["speed"] = speed
         self.refresh_telemetry_label()
+
+    def update_battery(self, voltage: float):
+        self.hud_data.set_voltage(voltage)
+
+    def update_gps_fix(self, fix_type: int):
+        self.hud_data.set_gps_fix(fix_type)
 
     def flash_button(self, btn, success, duration=2000):
         color = "#2e7d32" if success else "#c62828"

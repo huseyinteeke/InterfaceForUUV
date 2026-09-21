@@ -9,6 +9,8 @@ class MavlinkWorker(QThread):
     depth_received = pyqtSignal(float)
     speed_received = pyqtSignal(float)
     gps_received = pyqtSignal(float, float)
+    battery_received = pyqtSignal(float)    # Volts
+    gps_fix_received = pyqtSignal(int)      # fix_type (0-6)
     connection_status = pyqtSignal(bool, str)
     log_msg = pyqtSignal(str) 
     command_ack_received = pyqtSignal(int, int, str)
@@ -213,6 +215,19 @@ class MavlinkWorker(QThread):
                         param_val = msg.param_value
                         print(f"[PARAM] {param_id} = {param_val}")
                         self.param_value_received.emit(param_id, param_val)
+
+                    elif msg_type == 'BATTERY_STATUS':
+                        # voltages is a list of cell voltages in mV; index 0 = total pack voltage
+                        # (ArduPilot typically sends total pack on index 0)
+                        if msg.voltages and msg.voltages[0] != 65535:
+                            volts = msg.voltages[0] / 1000.0
+                            print(f"[BAT] {volts:.2f} V")
+                            self.battery_received.emit(volts)
+
+                    elif msg_type == 'GPS_RAW_INT':
+                        fix_type = msg.fix_type
+                        print(f"[GPS_RAW] fix_type={fix_type}")
+                        self.gps_fix_received.emit(fix_type)
 
                 except Exception as e:
                     time.sleep(0.1)
