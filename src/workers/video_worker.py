@@ -93,7 +93,7 @@ def _draw_artificial_horizon(frame, cx, cy, radius, roll_deg, pitch_deg):
     Sky/ground rengi kamera görüntüsünün üzerine hafif (alpha=0.35) blend edilir,
     böylece asıl görüntü alttan okunabilir kalır.
     """
-    HORIZON_ALPHA = 0.20   # 0 = tamamen şeffaf, 1 = tamamen opak
+    HORIZON_ALPHA = 0.10   # 0 = tamamen şeffaf, 1 = tamamen opak
 
     px_per_deg = radius / 25.0
     pitch_offset = int(pitch_deg * px_per_deg)
@@ -301,7 +301,7 @@ def _draw_telemetry_panels(frame, depth, voltage, gps_fix):
     elif voltage >= 14.0:
         bat_color = (60, 220, 60)
         bat_txt = f"BAT  {voltage:.1f} V"
-    elif voltage >= 12.5:
+    elif voltage >= 10.0:
         bat_color = (0, 190, 255)
         bat_txt = f"BAT  {voltage:.1f} V"
     else:
@@ -437,7 +437,6 @@ class VideoWorker(QThread):
         self.hud_data = hud_data  # None means no HUD
 
     def run(self):
-        # Windows'ta webcam için DirectShow (DSHOW) kullanıyoruz
         self.cap = cv2.VideoCapture(self.camera_source, cv2.CAP_DSHOW)
 
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 720)
@@ -446,37 +445,37 @@ class VideoWorker(QThread):
 
         if not self.cap.isOpened():
             print("Kamera açılmadı.")
+            self.cap.release()   # Kaynağı serbest bırak
             return
 
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         while self._is_running:
             ret, frame = self.cap.read()
-            if ret:
-                # Görüntünün yüksekliğini kontrol ediyoruz
-                h, w, _ = frame.shape
+            if not ret:
+                # Frame gelmedi — CPU spin önleme
+                import time as _time
+                _time.sleep(0.01)
+                continue
 
-                # Eğer sürücü PAL formatında (örn: 576 piksel) okuyup alt tarafa çöp atıyorsa,
-                # sadece temiz olan NTSC kısmını (ilk 480 satırı) kesip alıyoruz (Cropping):
-                if h > 480:
-                    frame = frame[0:480, 0:w]
+            h, w, _ = frame.shape
+            if h > 480:
+                frame = frame[0:480, 0:w]
 
-                # --- HUD overlay ---
-                if self.hud_data is not None:
-                    frame = draw_hud(frame, self.hud_data)
+            if self.hud_data is not None:
+                frame = draw_hud(frame, self.hud_data)
 
-                # Temizlenmiş çerçeveyi PyQt5 için hazırlıyoruz
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                fh2, fw2, ch = rgb_frame.shape
-                bytes_per_line = ch * fw2
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            fh2, fw2, ch = rgb_frame.shape
+            bytes_per_line = ch * fw2
 
-                qt_image = QImage(
-                    rgb_frame.data, fw2, fh2, bytes_per_line, QImage.Format_RGB888
-                ).copy()
-                self.frame_ready.emit(qt_image)
+            qt_image = QImage(
+                rgb_frame.data, fw2, fh2, bytes_per_line, QImage.Format_RGB888
+            ).copy()
+            self.frame_ready.emit(qt_image)
 
         self.cap.release()
 
     def stop(self):
         self._is_running = False
-        self.wait()
+        self.wait(3000)   # En fazla 3 saniye bekle — deadlock önleme
