@@ -88,11 +88,6 @@ def _rotate_point(cx, cy, px, py, angle_deg):
 # ---------------------------------------------------------------------------
 
 def _draw_artificial_horizon(frame, cx, cy, radius, roll_deg, pitch_deg):
-    """
-    Yarı saydam yapay ufuk çizer.
-    Sky/ground rengi kamera görüntüsünün üzerine hafif (alpha=0.35) blend edilir,
-    böylece asıl görüntü alttan okunabilir kalır.
-    """
     HORIZON_ALPHA = 0.10   # 0 = tamamen şeffaf, 1 = tamamen opak
 
     px_per_deg = radius / 25.0
@@ -108,6 +103,7 @@ def _draw_artificial_horizon(frame, cx, cy, radius, roll_deg, pitch_deg):
     rows_idx, cols_idx = np.mgrid[0:size, 0:size]
     dx = cols_idx - lx
     dy = rows_idx - ly
+
     # Ufuk ekseni koordinatlarına döndür
     ry = -dx * sin_r + dy * cos_r
     is_ground = (ry > pitch_offset)
@@ -343,9 +339,7 @@ def _draw_telemetry_panels(frame, depth, voltage, gps_fix):
 
     # --- Satır 3: Derinlik ---
     dep_y = py + line_h * 2 + 8
-    # Derinlik pozitif: yüzey = 0, aşağı gittikçe artar
-    dep_abs = abs(depth)
-    _put_text(frame, f"DEP  {dep_abs:.2f} m", (px, dep_y), scale=0.50,
+    _put_text(frame, f"DEP  {depth:.2f} m", (px, dep_y), scale=0.50,
               color=(160, 230, 255), thickness=1, shadow=True)
 
     # ---- Sağ taraf: Dikey derinlik gauge ----
@@ -354,7 +348,7 @@ def _draw_telemetry_panels(frame, depth, voltage, gps_fix):
     gy1, gy2 = fh // 4, 3 * fh // 4
     g_h = gy2 - gy1
     max_depth = 10.0
-    dep_pct = max(0.0, min(1.0, dep_abs / max_depth))
+    dep_pct = max(0.0, min(1.0, depth / max_depth))
     fill_h = int(g_h * dep_pct)
 
     # Arka plan (çok hafif)
@@ -367,7 +361,7 @@ def _draw_telemetry_panels(frame, depth, voltage, gps_fix):
     cv2.rectangle(frame, (gx - 4, gy1 - 2), (gx + 14, gy2 + 2),
                   (140, 140, 140), 1)
     # Etiket — sadece sayı
-    _put_text(frame, f"{dep_abs:.1f}", (gx - 8, gy2 + 14), scale=0.38,
+    _put_text(frame, f"{depth:.1f}", (gx - 8, gy2 + 14), scale=0.38,
               color=(160, 230, 255), thickness=1, shadow=True)
     # "0m" üstte
     _put_text(frame, "0m", (gx - 4, gy1 - 6), scale=0.35,
@@ -445,7 +439,7 @@ class VideoWorker(QThread):
 
         if not self.cap.isOpened():
             print("Kamera açılmadı.")
-            self.cap.release()   # Kaynağı serbest bırak
+            self.cap.release()  
             return
 
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)

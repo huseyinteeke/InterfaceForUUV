@@ -336,27 +336,41 @@ class MainWindow(QMainWindow):
         manual_layout = QGridLayout(manual_group)
 
         self.throttle_slider = QSlider(Qt.Horizontal)
-        self.throttle_slider.setRange(1000, 2000)
-        self.throttle_slider.setValue(1500)
+        self.throttle_slider.setRange(0, 100)
+        self.throttle_slider.setValue(0)
 
         self.rudder_slider = QSlider(Qt.Horizontal)
         self.rudder_slider.setRange(1000, 2000)
         self.rudder_slider.setValue(1500)
 
-        self.throttle_label = QLabel("Gaz (1500)")
-        self.rudder_label = QLabel("Yön (1500)")
+        self.throttle_label = QLabel("Gaz (Giriş: %0 | Çıkış S8: %0)")
+        self.rudder_label = QLabel("Yön (Giriş: 1500 | Çıkış S1: 1500)")
 
-        # Etiket güncelleme: valueChanged (hafif, sadece label)
-        self.throttle_slider.valueChanged.connect(
-            lambda v: self.throttle_label.setText(f"Gaz ({v})")
-        )
-        self.rudder_slider.valueChanged.connect(
-            lambda v: self.rudder_label.setText(f"Yön ({v})")
-        )
+        self._last_throttle_out_pct = 0
+        self._last_rudder_out = 1500
+
+        def update_throttle_label(v=None):
+            in_val = self.throttle_slider.value()
+            self.throttle_label.setText(f"Gaz (Giriş: %{in_val} | Çıkış S8: %{self._last_throttle_out_pct})")
+
+        def update_rudder_label(v=None):
+            in_val = self.rudder_slider.value()
+            self.rudder_label.setText(f"Yön (Giriş: {in_val} | Çıkış S1: {self._last_rudder_out})")
+
+        self._update_throttle_label_ui = update_throttle_label
+        self._update_rudder_label_ui = update_rudder_label
+
+        # Etiket güncelleme: valueChanged
+        self.throttle_slider.valueChanged.connect(update_throttle_label)
+        self.rudder_slider.valueChanged.connect(update_rudder_label)
 
         # RC gönderim: sliderMoved (sadece kullanıcı sürüklediğinde) + throttle
         self.throttle_slider.sliderMoved.connect(self._on_slider_moved)
         self.rudder_slider.sliderMoved.connect(self._on_slider_moved)
+        
+        # Bırakıldığında son değeri kesin olarak gönder (throttle'a takılmasın)
+        self.throttle_slider.sliderReleased.connect(self._send_rc_now)
+        self.rudder_slider.sliderReleased.connect(self._send_rc_now)
 
         self.reset_rc_btn = QPushButton("Sıfırla")
         self.reset_rc_btn.clicked.connect(self.reset_rc_override)
@@ -621,12 +635,13 @@ class MainWindow(QMainWindow):
     def _send_rc_now(self):
         """Anlık slider değerlerini RC olarak gönder."""
         if self.mavlink_worker and self.mavlink_worker.isRunning():
-            throttle = self.throttle_slider.value()
+            throttle_pct = self.throttle_slider.value()
+            throttle = 1500 + int(throttle_pct * 5)
             rudder   = self.rudder_slider.value()
             self.mavlink_worker.send_rc(rudder, throttle)
 
     def reset_rc_override(self):
-        self.throttle_slider.setValue(1500)
+        self.throttle_slider.setValue(0)
         self.rudder_slider.setValue(1500)
         self._send_rc_now()   # Reset'te hemen gönder
 
@@ -729,13 +744,26 @@ class MainWindow(QMainWindow):
             self._last_gps_map_update = now
 
     def update_servo_sliders(self, steering_pwm: int, throttle_pwm: int):
-        # Kullanıcı slider'ı sürüklüyorken (mouse basılıysa) değerin değişmesini engelliyoruz
-        # Böylece titreme veya mouse elinden kayması olmaz
-        if not self.rudder_slider.isSliderDown():
-            self.rudder_slider.setValue(steering_pwm)
+        self._last_rudder_out = steering_pwm
+        
+        # Gelen 1000-2000 verisini 0-100 arasına sığdır
+        pct = int((throttle_pwm - 1000) / 10)
+        # Sınırları aşmaması için clamp (0-100)
+        pct = max(0, min(100, pct))
+        self._last_throttle_out_pct = pct
+        
+        # Etiketleri güncelliyoruz
+        if hasattr(self, '_update_rudder_label_ui'):
+            self._update_rudder_label_ui()
+        if hasattr(self, '_update_throttle_label_ui'):
+            self._update_throttle_label_ui()
             
+        # Kullanıcı slider'ı sürüklemiyorsa, geri beslemeyi (feedback) slider'a yaz
         if not self.throttle_slider.isSliderDown():
-            self.throttle_slider.setValue(throttle_pwm)
+            # Sinyali bloklayarak _on_slider_moved tetiklenmesini ve döngüye girmesini engelliyoruz
+            self.throttle_slider.blockSignals(True)
+            self.throttle_slider.setValue(pct)
+            self.throttle_slider.blockSignals(False)
 
     def update_video_frame(self, image):
         pixmap = QPixmap.fromImage(image)

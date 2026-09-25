@@ -56,7 +56,7 @@ class MavlinkWorker(QThread):
             while self._is_running:
                 # GCS Heartbeat — 1 Hz zorunlu.
                 # Kesilirse araç GCS Failsafe → RTL'e geçer!
-                if time.time() - last_heartbeat_sent_time > 1.0:
+                if time.time() - last_heartbeat_sent_time > 0.7:
                     if self.master:
                         self.master.mav.heartbeat_send(
                             mavutil.mavlink.MAV_TYPE_GCS,
@@ -141,41 +141,28 @@ class MavlinkWorker(QThread):
                         lon   = msg.lon / 1e7
                         self.current_lat = lat
                         self.current_lon = lon
-
                         speed = math.sqrt(msg.vx**2 + msg.vy**2) / 100.0
-
                         self.gps_received.emit(lat, lon)
                         self.speed_received.emit(speed)
 
                     # ---- SERVO_OUTPUT_RAW (Gerçek Motor/Servo Çıkışları) ----
                     elif msg_type == 'SERVO_OUTPUT_RAW':
                         steering = msg.servo1_raw
-                        throttle = msg.servo3_raw
+                        throttle = msg.servo8_raw
                         self.servo_output_received.emit(steering, throttle)
 
                     # ---- VFR_HUD (Yer Hızı) --------------------------------
                     elif msg_type == 'VFR_HUD':
                         self.speed_received.emit(msg.groundspeed)
 
-                    # ---- SCALED_PRESSURE2 (Karttan Gelen Baro 2 Verisi) -----
+                    # ---- SCALED_PRESSURE2 
                     elif msg_type == 'SCALED_PRESSURE2':
-                        # Karttan (ArduPilot/Baro2) gelen ham basınç verisi (hPa / mbar)
-                        # press_diff varsa fark basınç, yoksa atmosfer basıncı düşülmüş fark kullanılır
-                        press_diff = getattr(msg, 'press_diff', 0.0)
-                        if press_diff != 0.0:
-                            depth = press_diff / 98.0665
-                        else:
-                            depth = (msg.press_abs - 1013.25) / 98.0665
+                        press_diff = getattr(msg, 'press_abs', 0.0)
+                        depth = press_diff
+                        print(depth)
                         self.depth_received.emit(depth)
 
-                    # ---- SCALED_PRESSURE (Yedek Baro 1 Verisi) --------------
-                    elif msg_type == 'SCALED_PRESSURE':
-                        press_diff = getattr(msg, 'press_diff', 0.0)
-                        if press_diff != 0.0:
-                            depth = press_diff / 98.0665
-                        else:
-                            depth = (msg.press_abs - 1013.25) / 98.0665
-                        self.depth_received.emit(depth)
+      
 
                     # ---- HOME_POSITION -------------------------------------
                     elif msg_type == 'HOME_POSITION':
@@ -270,7 +257,6 @@ class MavlinkWorker(QThread):
                     # ---- MISSION_ITEM_REACHED ------------------------------
                     elif msg_type == 'MISSION_ITEM_REACHED':
                         seq = msg.seq
-                        # seq=0 HOME'a "ulaşıldı" mesajı anlamsız — sustur
                         if seq > 0:
                             self.wp_log_msg.emit(f"[WP] ✓ {seq}. hedefe ulaşıldı!")
 
@@ -334,10 +320,7 @@ class MavlinkWorker(QThread):
                 self.master = None
                 self.log_msg.emit("MAVLink bağlantısı kapatıldı.")
 
-    def tare_depth(self):
-        """Derinliği bulunulan mevcut yüzey konumunda 0.0m olarak sıfırlar (Tare)."""
-        self.baro_zero_alt = None
-        self.log_msg.emit("Derinlik yüzey referansı sıfırlandı (Tare).")
+
 
     def set_arm(self, armed: bool):
         if not self.master:
@@ -431,7 +414,6 @@ class MavlinkWorker(QThread):
             f"[WP] Yükleme başlatıldı → {len(waypoints)} waypoint (+ HOME seq=0)"
         )
 
-        # Önce temizle — ACK gelince _pending_upload'tan yükleme başlar
         self.master.mav.mission_clear_all_send(
             self.master.target_system,
             self.master.target_component,
